@@ -1,0 +1,261 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mac Calculator</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background: #e9e9e9;
+    font-family: Arial, sans-serif;
+}
+
+.calculator {
+    width: 320px;
+    padding: 18px;
+    background: #252525;
+    border-radius: 32px;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.3);
+}
+
+.display {
+    height: 115px;
+    color: white;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-end;
+    padding: 10px 8px 20px;
+    font-size: 55px;
+    font-weight: 300;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.buttons {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+}
+
+button {
+    height: 62px;
+    border: none;
+    border-radius: 50%;
+    font-size: 23px;
+    cursor: pointer;
+    transition: filter 0.1s;
+}
+
+button:active {
+    filter: brightness(1.3);
+}
+
+.number {
+    background: #505050;
+    color: white;
+}
+
+.function {
+    background: #bdbdbd;
+    color: black;
+}
+
+.operator {
+    background: #ff9f0a;
+    color: white;
+}
+
+.operator.active {
+    background: white;
+    color: #ff9f0a;
+}
+
+.zero {
+    grid-column: span 2;
+    border-radius: 40px;
+    text-align: left;
+    padding-left: 25px;
+}
+
+.status {
+    color: #aaa;
+    text-align: center;
+    font-size: 11px;
+    margin-top: 12px;
+    min-height: 14px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="calculator">
+    <div class="display" id="display">0</div>
+
+    <div class="buttons">
+        <button class="function" onclick="clearDisplay()">AC</button>
+        <button class="function" onclick="changeSign()">+/-</button>
+        <button class="function" onclick="percentage()">%</button>
+        <button class="operator" data-op="divide" onclick="chooseOperation('divide')">÷</button>
+
+        <button class="number" onclick="inputNumber('7')">7</button>
+        <button class="number" onclick="inputNumber('8')">8</button>
+        <button class="number" onclick="inputNumber('9')">9</button>
+        <button class="operator" data-op="multiply" onclick="chooseOperation('multiply')">×</button>
+
+        <button class="number" onclick="inputNumber('4')">4</button>
+        <button class="number" onclick="inputNumber('5')">5</button>
+        <button class="number" onclick="inputNumber('6')">6</button>
+        <button class="operator" data-op="subtract" onclick="chooseOperation('subtract')">−</button>
+
+        <button class="number" onclick="inputNumber('1')">1</button>
+        <button class="number" onclick="inputNumber('2')">2</button>
+        <button class="number" onclick="inputNumber('3')">3</button>
+        <button class="operator" data-op="add" onclick="chooseOperation('add')">+</button>
+
+        <button class="number zero" onclick="inputNumber('0')">0</button>
+        <button class="number" onclick="inputDecimal()">.</button>
+        <button class="operator" onclick="calculate()">=</button>
+    </div>
+
+    <div class="status" id="status">Calculator Ready</div>
+</div>
+
+<script>
+const API_URL = "http://192.168.122.3:5000/calculate";
+
+let currentInput = "0";
+let firstOperand = null;
+let pendingOperation = null;
+let waitingForOperand = false;
+
+const display = document.getElementById("display");
+const statusText = document.getElementById("status");
+
+function updateDisplay() {
+    display.textContent = currentInput;
+}
+
+function setStatus(message) {
+    statusText.textContent = message;
+}
+
+function clearActiveOperator() {
+    document.querySelectorAll(".operator").forEach(button => {
+        button.classList.remove("active");
+    });
+}
+
+function inputNumber(number) {
+    if (waitingForOperand) {
+        currentInput = number;
+        waitingForOperand = false;
+    } else {
+        currentInput = currentInput === "0"
+            ? number
+            : currentInput + number;
+    }
+    updateDisplay();
+}
+
+function inputDecimal() {
+    if (waitingForOperand) {
+        currentInput = "0.";
+        waitingForOperand = false;
+    } else if (!currentInput.includes(".")) {
+        currentInput += ".";
+    }
+    updateDisplay();
+}
+
+function clearDisplay() {
+    currentInput = "0";
+    firstOperand = null;
+    pendingOperation = null;
+    waitingForOperand = false;
+    clearActiveOperator();
+    setStatus("Calculator Ready");
+    updateDisplay();
+}
+
+function changeSign() {
+    currentInput = String(-Number(currentInput));
+    updateDisplay();
+}
+
+function percentage() {
+    currentInput = String(Number(currentInput) / 100);
+    updateDisplay();
+}
+
+function chooseOperation(operation) {
+    if (pendingOperation && !waitingForOperand) {
+        calculate();
+    }
+
+    firstOperand = Number(currentInput);
+    pendingOperation = operation;
+    waitingForOperand = true;
+
+    clearActiveOperator();
+    document.querySelector(`[data-op="${operation}"]`)
+        .classList.add("active");
+}
+
+async function calculate() {
+    if (pendingOperation === null || firstOperand === null) {
+        return;
+    }
+
+    const secondOperand = Number(currentInput);
+    const operation = pendingOperation;
+
+    setStatus("Connecting to server...");
+
+    try {
+        const response = await fetch(API_URL, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+                a: firstOperand,
+                b: secondOperand,
+                operation: operation
+            })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            throw new Error(data.error || "Calculation failed");
+        }
+
+        currentInput = String(data.result);
+        firstOperand = null;
+        pendingOperation = null;
+        waitingForOperand = true;
+
+        clearActiveOperator();
+        setStatus("Result received from server");
+        updateDisplay();
+
+    } catch (error) {
+        setStatus(error.message);
+    }
+}
+</script>
+
+</body>
+</html>
